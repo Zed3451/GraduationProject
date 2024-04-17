@@ -1,83 +1,25 @@
+import smbus
 import time
-import Adafruit_ADS1x15
 
-if __name__ == '__main__':
-    adc = Adafruit_ADS1x15.ADS1115()  # Use ADS1115
-    # initialization
-    GAIN = 2/3  # You might want to adjust this based on your application
-    curState = 0
-    thresh = 26000  # Adjusted for 16-bit resolution. Original was 525; you'll need to experiment
-    P = 32768  # Midpoint of 16-bit ADC (0-65535)
-    T = 32768
-    stateChanged = 0
-    sampleCounter = 0
-    lastBeatTime = 0
-    firstBeat = True
-    secondBeat = False
-    Pulse = False
-    IBI = 600
-    rate = [0]*10
-    amp = 100
+# Initialize the I2C bus
+bus = smbus.SMBus(1)
+address = 0x48  # ADS1115 address
 
-    lastTime = int(time.time()*1000)
+# Read analog value from channel 0 (A0)
 
+
+def read_adc(channel):
+    data = bus.read_i2c_block_data(address, 0x01, 2)
+    value = (data[0] << 8) + data[1]
+    return value
+
+
+try:
     while True:
-        Signal = adc.read_adc(0, gain=GAIN)  # Read from channel 0
-        curTime = int(time.time()*1000)
+        raw_value = read_adc(0)  # Read from channel 0
+        voltage = raw_value * 3.3 / 65536  # Convert to voltage
+        print(f"Heart rate voltage: {voltage:.4f} V")
+        time.sleep(1)
 
-        sampleCounter += curTime - lastTime
-        lastTime = curTime
-        N = sampleCounter - lastBeatTime
-
-        if Signal < thresh and N > (IBI/5.0)*3.0:
-            if Signal < T:
-                T = Signal
-
-        if Signal > thresh and Signal > P:
-            P = Signal
-
-        if N > 250:
-            if (Signal > thresh) and (Pulse == False) and (N > (IBI/5.0)*3.0):
-                Pulse = True
-                IBI = sampleCounter - lastBeatTime
-                lastBeatTime = sampleCounter
-
-                if secondBeat:
-                    secondBeat = False
-                    for i in range(0, 10):
-                        rate[i] = IBI
-
-                if firstBeat:
-                    firstBeat = False
-                    secondBeat = True
-                    continue
-
-                runningTotal = 0
-
-                for i in range(0, 9):
-                    rate[i] = rate[i+1]
-                    runningTotal += rate[i]
-
-                rate[9] = IBI
-                runningTotal += rate[9]
-                runningTotal /= 10
-                BPM = 60000/runningTotal
-                print(f'BPM: {BPM}')
-
-        if Signal < thresh and Pulse == True:
-            Pulse = False
-            amp = P - T
-            thresh = amp/2 + T
-            P = thresh
-            T = thresh
-
-        if N > 2500:
-            thresh = 32768
-            P = 32768
-            T = 32768
-            lastBeatTime = sampleCounter
-            firstBeat = True
-            secondBeat = False
-            print("no beats found")
-
-        time.sleep(0.005)
+except KeyboardInterrupt:
+    print("\nMeasurement stopped by user.")
